@@ -8,56 +8,70 @@ var slackApiToken = process.env.SLACK_API_TOKEN || '';
 // See https://www.pivotaltracker.com/profile
 var trackerApiToken = process.env.TRACKER_API_TOKEN || '';
 
-var channels = {};
+function Index(rtmClient, trackerClient) {
+  this._rtmClient = rtmClient;
+  this._trackerClient = trackerClient;
 
-function processWebhook(bot, trackerClient, body) {
-  var project = trackerClient.project(body.project.id);
-  var resources = body.primary_resources;
+  this._channels = {};
 
-  if (resources.length === 1 && resources[0].kind === 'story') {
-    console.log(resources[0].url);
+  var that = this;
 
-    project.story(resources[0].id).get(function (err, story) {
-      story.labels.forEach(function (label, index) {
-        console.log(channels);
-        var channelId = channels[label.name];
-        if (channelId) {
-          bot.sendMessage(body.message + '\n' + resources[0].url,
-                          channelId);
-        }
-      });
+  rtmClient.on(slack_client.CLIENT_EVENTS.RTM.AUTHENTICATED, function (start) {
+    // Channels just have public channels
+    start.channels.forEach(function (channel) {
+      that._channels[channel.name] = channel.id;
     });
+
+    // Private channels are internally called "groups"
+    start.groups.forEach(function (group) {
+      that._channels[group.name] = group.id;
+    });
+  });
+
+}
+
+Index.prototype = {
+  processWebhook: function (body) {
+    var that = this;
+
+    var project = that._trackerClient.project(body.project.id);
+    var resources = body.primary_resources;
+
+    if (resources.length === 1 && resources[0].kind === 'story') {
+      console.log(resources[0].url);
+
+      project.story(resources[0].id).get(function (err, story) {
+        story.labels.forEach(function (label, index) {
+          var channelId = that._channels[label.name];
+          if (channelId) {
+            that._rtmClient.sendMessage(body.message + '\n' + resources[0].url,
+                                        channelId);
+          }
+        });
+      });
+    }
   }
 }
 
 function main() {
   var trackerClient = new pivotaltracker.Client(trackerApiToken);
 
-  var bot = new slack_client.RtmClient(slackApiToken, {logLevel: 'info'});
-  bot.on(slack_client.CLIENT_EVENTS.RTM.AUTHENTICATED, function (start) {
-    start.channels.forEach(function (channel) {
-      channels[channel.name] = channel.id;
-    });
+  var rtmClient = new slack_client.RtmClient(slackApiToken, {logLevel: 'info'});
+  var index = new Index(rtmClient, trackerClient);
 
-    // Private channels are internally called "groups"
-    start.groups.forEach(function (group) {
-      channels[group.name] = group.id;
-    });
-  });
-  bot.start();
-
-  var app = express();
-  app.use(body_parser.json());
-  app.post('/webhooks/pivotal', function (req, res) {
-    processWebhook(bot, trackerClient, req.body);
+  var webServer = express();
+  webServer.use(body_parser.json());
+  webServer.post('/webhooks/pivotal', function (req, res) {
+    index.processWebhook(req.body);
     res.send('pong');
   });
-  app.listen(3000);
+
+  rtmClient.start();
+
+  webServer.listen(3000);
 }
 
-module.exports = {
-  processWebhook: processWebhook
-};
+module.exports = Index;
 
 if (! module.parent) {
   main();
