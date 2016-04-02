@@ -10,30 +10,9 @@ var trackerApiToken = process.env.TRACKER_API_TOKEN || '';
 
 var channels = {};
 
-var bot = new slack_client.RtmClient(slackApiToken, {logLevel: 'info'});
-bot.on(slack_client.CLIENT_EVENTS.RTM.AUTHENTICATED, function (start) {
-  start.channels.forEach(function (channel) {
-    channels[channel.name] = channel.id;
-  });
-
-  // Private channels are internally called "groups"
-  start.groups.forEach(function (group) {
-    channels[group.name] = group.id;
-  });
-});
-bot.start();
-
-var trackerClient = new pivotaltracker.Client(trackerApiToken);
-
-var app = express();
-app.use(body_parser.json());
-app.post('/webhooks/pivotal', function (req, res) {
-  console.log(req.body);
-
-  var project = trackerClient.project(req.body.project.id);
-  var resources = req.body.primary_resources;
-
-  console.log(req.body.message);
+function processWebhook(bot, trackerClient, body) {
+  var project = trackerClient.project(body.project.id);
+  var resources = body.primary_resources;
 
   if (resources.length === 1 && resources[0].kind === 'story') {
     console.log(resources[0].url);
@@ -43,19 +22,43 @@ app.post('/webhooks/pivotal', function (req, res) {
         console.log(channels);
         var channelId = channels[label.name];
         if (channelId) {
-          bot.sendMessage(req.body.message + '\n' + resources[0].url,
+          bot.sendMessage(body.message + '\n' + resources[0].url,
                           channelId);
         }
       });
     });
   }
-
-  res.send('pong');
-});
-
-module.exports = function () {
 }
 
-if (! module.parent) {
+function main() {
+  var trackerClient = new pivotaltracker.Client(trackerApiToken);
+
+  var bot = new slack_client.RtmClient(slackApiToken, {logLevel: 'info'});
+  bot.on(slack_client.CLIENT_EVENTS.RTM.AUTHENTICATED, function (start) {
+    start.channels.forEach(function (channel) {
+      channels[channel.name] = channel.id;
+    });
+
+    // Private channels are internally called "groups"
+    start.groups.forEach(function (group) {
+      channels[group.name] = group.id;
+    });
+  });
+  bot.start();
+
+  var app = express();
+  app.use(body_parser.json());
+  app.post('/webhooks/pivotal', function (req, res) {
+    processWebhook(bot, trackerClient, req.body);
+    res.send('pong');
+  });
   app.listen(3000);
+}
+
+module.exports = {
+  processWebhook: processWebhook
+};
+
+if (! module.parent) {
+  main();
 }
