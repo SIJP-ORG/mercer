@@ -52,4 +52,10 @@ app.post('/webhooks/pivotal', function (req, res) {
 
   res.send('pong');
 });
-app.listen(3000);
+
+module.exports = function () {
+}
+
+if (! module.parent) {
+  app.listen(3000);
+}
