@@ -15,22 +15,37 @@ function Index(rtmClient, trackerClient) {
   this._channels = {};
 
   var that = this;
-
   rtmClient.on(slack_client.CLIENT_EVENTS.RTM.AUTHENTICATED, function (start) {
+    that.resetChannels(start.channels, start.groups);
+  });
+}
+
+Index.prototype = {
+  resetChannels: function (channels, groups) {
+    var that = this;
+
     // Channels just have public channels
-    start.channels.forEach(function (channel) {
+    channels.forEach(function (channel) {
       that._channels[channel.name] = channel.id;
     });
 
     // Private channels are internally called "groups"
-    start.groups.forEach(function (group) {
+    groups.forEach(function (group) {
       that._channels[group.name] = group.id;
     });
-  });
+  },
 
-}
+  sendProjectUpdate: function (labels, message) {
+    var that = this;
 
-Index.prototype = {
+    labels.forEach(function (label, index) {
+      var channelId = that._channels[label];
+      if (channelId) {
+        that._rtmClient.sendMessage(message, channelId);
+      }
+    });
+  },
+
   processWebhook: function (body) {
     var that = this;
 
@@ -38,16 +53,12 @@ Index.prototype = {
     var resources = body.primary_resources;
 
     if (resources.length === 1 && resources[0].kind === 'story') {
-      console.log(resources[0].url);
-
       project.story(resources[0].id).get(function (err, story) {
-        story.labels.forEach(function (label, index) {
-          var channelId = that._channels[label.name];
-          if (channelId) {
-            that._rtmClient.sendMessage(body.message + '\n' + resources[0].url,
-                                        channelId);
-          }
+        var labels = story.labels.map(function (label) {
+          return label.name;
         });
+        var message = body.message + '\n' + resources[0].url;
+        that.sendProjectUpdate(labels, message);
       });
     }
   }
