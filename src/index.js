@@ -79,7 +79,7 @@ function main() {
 
   rtmClient.start();
 
-  webServer.listen(3000);
+  webServer.listen(process.env.PORT || 8080);
 }
 
 module.exports = Index;
