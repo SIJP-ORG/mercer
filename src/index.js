@@ -57,7 +57,8 @@ Index.prototype = {
         var labels = story.labels.map(function (label) {
           return label.name;
         });
-        var message = body.message + '\n' + resources[0].url;
+        var message =
+          body.message + '\n' + resources[0].name + '\n' + resources[0].url;
         that.sendProjectUpdate(labels, message);
       });
     }
